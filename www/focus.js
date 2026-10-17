@@ -1,8 +1,9 @@
 /* ============================================================
    专注模块（学习目标台 × 茶·高效待办）
    - 番茄钟 / 正计时
-   - Web Audio 实时合成白噪 / 粉噪 / 棕噪（离线可用）
-   - 子任务打勾、专注记录联动看板与周报（复用 records + focus 标记）
+   - 真实环境声景（与 tea.awacode.top 同源：moodist / Pixabay CC0），单选、循环
+   - 子任务打勾、专注记录联动看板与周报（records + focus 标记）
+   - 专注结束自动打卡（当天首次）并记录投入分钟
    所有读写都通过 index.html 暴露的 window.SG 进行。
    ============================================================ */
 (function(){
@@ -12,6 +13,24 @@
 
   var PRESETS = [15, 25, 30, 45];
 
+  /* 真实声景清单（与 tea 一致的音源，已压缩打包进 www/sounds） */
+  var SOUNDS = [
+    { id:'light-rain',      cn:'小雨',    cat:'雨',   f:'sounds/rain/light-rain.mp3' },
+    { id:'rain-on-window',  cn:'雨打窗',  cat:'雨',   f:'sounds/rain/rain-on-window.mp3' },
+    { id:'heavy-rain',      cn:'大雨',    cat:'雨',   f:'sounds/rain/heavy-rain.mp3' },
+    { id:'river',           cn:'河流',    cat:'自然', f:'sounds/nature/river.mp3' },
+    { id:'waves',           cn:'海浪',    cat:'自然', f:'sounds/nature/waves.mp3' },
+    { id:'campfire',        cn:'篝火',    cat:'自然', f:'sounds/nature/campfire.mp3' },
+    { id:'wind-in-trees',   cn:'林间风',  cat:'自然', f:'sounds/nature/wind-in-trees.mp3' },
+    { id:'birds',           cn:'鸟鸣',    cat:'动物', f:'sounds/animals/birds.mp3' },
+    { id:'cafe',            cn:'咖啡馆',  cat:'场所', f:'sounds/places/cafe.mp3' },
+    { id:'white-noise',     cn:'白噪音',  cat:'噪音', f:'sounds/noise/white-noise.mp3' },
+    { id:'pink-noise',      cn:'粉噪音',  cat:'噪音', f:'sounds/noise/pink-noise.mp3' },
+    { id:'brown-noise',     cn:'棕噪音',  cat:'噪音', f:'sounds/noise/brown-noise.mp3' },
+    { id:'binaural-beta',   cn:'β 专注',  cat:'双耳', f:'sounds/binaural/binaural-beta.mp3' }
+  ];
+  var SOUND_CATS = ['雨','自然','动物','场所','噪音','双耳'];
+
   var state = {
     running:false, paused:false,
     mode:'pomodoro',          // 'pomodoro' | 'stopwatch'
@@ -19,11 +38,10 @@
     totalSec:25*60,
     accumSec:0,              // 已累计秒数（跨暂停）
     segStart:0,              // 当前段落起点
-    goalId:null,
+    goalId:null,             // 未选择时为 null，禁止开始
     timer:null,
-    sound:{ white:false, pink:false, brown:false },
-    audioCtx:null,
-    nodes:{}
+    soundId:null,            // 单选声景，null=静音
+    audioEl:null
   };
 
   /* ---------- 工具 ---------- */
@@ -38,60 +56,57 @@
     return e;
   }
   function curPct(){
-    if(state.mode==='stopwatch') return Math.min(curElapsed()/3600, 1)*100; // 1 小时满环
+    if(state.mode==='stopwatch') return Math.min(curElapsed()/3600, 1)*100;
     return Math.min(curElapsed()/state.totalSec, 1)*100;
   }
+  function soundById(id){
+    for(var i=0;i<SOUNDS.length;i++) if(SOUNDS[i].id===id) return SOUNDS[i];
+    return null;
+  }
 
-  /* ---------- Web Audio 声景 ---------- */
-  function ensureCtx(){
-    if(!state.audioCtx){
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if(!AC) return null;
-      try{ state.audioCtx = new AC(); }catch(e){ return null; }
+  /* ---------- 声景（真实音频，单选，循环，淡入淡出） ---------- */
+  function fade(a, from, to, ms, done){
+    var start = Date.now();
+    var step = 30;
+    function run(){
+      if(!a) return;
+      var t = Math.min(1, (Date.now()-start)/ms);
+      try{ a.volume = Math.max(0, Math.min(1, from + (to-from)*t)); }catch(e){}
+      if(t<1) setTimeout(run, step);
+      else if(done) done();
     }
-    if(state.audioCtx.state==='suspended'){ try{ state.audioCtx.resume(); }catch(e){} }
-    return state.audioCtx;
+    run();
   }
-  function makeNoiseBuffer(ctx, type){
-    var len = Math.floor(ctx.sampleRate*3);
-    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    var d = buf.getChannelData(0), i, w;
-    if(type==='white'){
-      for(i=0;i<len;i++) d[i] = Math.random()*2-1;
-    }else if(type==='pink'){
-      var b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-      for(i=0;i<len;i++){
-        w = Math.random()*2-1;
-        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759; b2=0.96900*b2+w*0.1538520;
-        b3=0.86650*b3+w*0.3104856; b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
-        d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
-      }
-    }else{ // brown（棕噪）
-      var last=0;
-      for(i=0;i<len;i++){
-        w = Math.random()*2-1;
-        last = (last + 0.02*w)/1.02; d[i] = last*3.5;
-      }
+  function stopSound(){
+    state.soundId = null;
+    if(state.audioEl){
+      var a = state.audioEl; state.audioEl = null;
+      fade(a, a.volume||0, 0, 260, function(){ try{ a.pause(); }catch(e){} });
     }
-    return buf;
   }
-  function setSound(type, on){
-    var ctx = ensureCtx(); if(!ctx) return;
-    if(on){
-      if(state.nodes[type]) return;
-      var src = ctx.createBufferSource();
-      src.buffer = makeNoiseBuffer(ctx, type);
-      src.loop = true;
-      var gain = ctx.createGain(); gain.gain.value = 0.12;
-      src.connect(gain); gain.connect(ctx.destination);
-      try{ src.start(0); }catch(e){ return; }
-      state.nodes[type] = { src:src, gain:gain };
+  function playSound(id){
+    if(!id){ stopSound(); return; }
+    var s = soundById(id);
+    if(!s) return;
+    // 切换时先淡出旧的
+    if(state.audioEl){
+      var old = state.audioEl; state.audioEl = null;
+      fade(old, old.volume||0, 0, 220, function(){ try{ old.pause(); }catch(e){} });
+    }
+    var a = new Audio(s.f);
+    a.loop = true;
+    a.volume = 0;
+    state.audioEl = a;
+    state.soundId = id;
+    var p = a.play();
+    if(p && p.catch){
+      p.then(function(){ fade(a, 0, 0.55, 400); }).catch(function(){
+        state.soundId = null; state.audioEl = null;
+        SG.toast('声景播放失败，请重试','err');
+      });
     }else{
-      if(state.nodes[type]){ try{ state.nodes[type].src.stop(); }catch(e){} state.nodes[type]=null; }
+      fade(a, 0, 0.55, 400);
     }
-  }
-  function stopAllSound(){
-    Object.keys(state.nodes).forEach(function(k){ setSound(k, false); });
   }
 
   /* ---------- 计时 ---------- */
@@ -107,14 +122,12 @@
   function startOrResume(){
     if(state.running) return;
     if(!state.goalId){
-      var first = activeGoals()[0];
-      if(first){ state.goalId = first.id; }
-      else { SG.toast('先到「今日」建一个目标，再来专注','err'); return; }
+      SG.toast('请先选择一个目标，再开始专注','err');
+      return;
     }
     if(window.AppNative && window.AppNative.notifySupported()){
       try{ window.AppNative.requestNotify(); }catch(e){}
     }
-    ensureCtx();
     state.running = true; state.paused = false;
     state.segStart = Date.now();
     if(!state.timer) state.timer = setInterval(tick, 250);
@@ -127,7 +140,10 @@
     renderFocus();
   }
   function finish(auto){
-    var minutes = Math.round(curElapsed()/60);
+    var elapsed = curElapsed();
+    // 提前结束也记录：≥3 秒即记 1 分钟，避免误触
+    var minutes = Math.round(elapsed/60);
+    if(minutes<=0 && elapsed>=3) minutes = 1;
     var gid = state.goalId;
     resetTimer();
     if(minutes>0 && gid){
@@ -141,7 +157,7 @@
         }
       }
     }
-    stopAllSound();
+    stopSound();
     updateBar();
     renderFocus();
   }
@@ -153,7 +169,7 @@
     if(state.running || state.accumSec>0){
       finish(false);
     }else{
-      resetTimer(); stopAllSound(); updateBar(); renderFocus();
+      resetTimer(); stopSound(); updateBar(); renderFocus();
     }
   }
 
@@ -198,6 +214,22 @@
       bar.classList.add('hide');
     }
   }
+  function soundChipsHtml(){
+    var h = '<div class="snd-head"><span class="snd-title">'+SG.icon('wave')+'声景</span>'
+      + '<span class="snd-status">'+(state.soundId ? ('播放中：'+soundById(state.soundId).cn) : '静音')+'</span></div>';
+    SOUND_CATS.forEach(function(cat){
+      var list = SOUNDS.filter(function(s){ return s.cat===cat; });
+      if(!list.length) return;
+      h += '<div class="snd-group"><span class="snd-cat">'+cat+'</span><div class="snd-chips">'
+        + list.map(function(s){
+            return '<button type="button" class="chip '+(state.soundId===s.id?'on':'')+'" data-fact="sound" data-snd="'+s.id+'">'+SG.esc(s.cn)+'</button>';
+          }).join('')
+        + '</div></div>';
+    });
+    h += '<div class="snd-foot"><button type="button" class="chip '+(state.soundId?'':'on')+'" data-fact="sound" data-snd="">'+SG.icon('x')+'静音</button>'
+      + '<span class="xs muted">声音来自 moodist（Pixabay CC0），与 tea 同源；一次只能选一种。</span></div>';
+    return h;
+  }
 
   function renderFocus(){
     var box = document.getElementById('focusBody');
@@ -207,8 +239,9 @@
       box.innerHTML = '<div class="card empty sec"><div class="ei">'+SG.icon('target')+'</div><h3>还没有可专注的目标</h3><div class="small">去「今日」新建一个学习目标，再回来这里坐下专注。</div></div>';
       return;
     }
-    if(!state.goalId || !SG.goalById(state.goalId)) state.goalId = goals[0].id;
-    var g = SG.goalById(state.goalId);
+    // 不自动选择目标：必须由用户显式选择
+    if(state.goalId && !SG.goalById(state.goalId)) state.goalId = null;
+    var g = state.goalId ? SG.goalById(state.goalId) : null;
 
     var goalChips = goals.map(function(x){
       return '<button type="button" class="chip '+(x.id===state.goalId?'on':'')+'" data-fact="pick" data-id="'+x.id+'">'
@@ -227,35 +260,27 @@
       }).join('') + '</div>';
     }
 
-    // 动作按钮
     var actions;
     if(!state.running){
-      actions = '<button class="btn pri full" data-fact="toggle">'+SG.icon('play')+'开始专注</button>';
+      actions = '<button class="btn pri full" data-fact="toggle">'+SG.icon('play')+'开始专注</button>'
+        + (!state.goalId ? '<div class="fc-hint">'+SG.icon('info')+'先在上方选择一个目标，才能开始专注</div>' : '');
     }else{
       actions = '<div style="display:flex;gap:10px">'
         + '<button class="btn '+(state.paused?'pri':'')+'" data-fact="toggle" style="flex:1">'+SG.icon(state.paused?'play':'pause')+(state.paused?'继续':'暂停')+'</button>'
-        + '<button class="btn late" data-fact="finish" style="flex:1">'+SG.icon('stop')+'结束并记</button>'
+        + '<button class="btn late" data-fact="finish" style="flex:1">'+SG.icon('stop')+'结束并记录</button>'
         + '</div>';
     }
 
-    // 声景
-    var sounds = [['off','静音'],['white','白噪'],['pink','粉噪'],['brown','棕噪']];
-    var soundChips = '<div class="fc-sound">'
-      + sounds.map(function(s){
-          var on = s[0]==='off' ? (!state.sound.white && !state.sound.pink && !state.sound.brown)
-                                : !!state.sound[s[0]];
-          return '<button type="button" class="chip '+(on?'on':'')+'" data-fact="sound" data-snd="'+s[0]+'">'+SG.icon('wave')+s[1]+'</button>';
-        }).join('')
-      + '</div>';
-
     // 子任务
     var subHtml = '';
-    var sts = g.subtasks||[];
-    if(sts.length){
-      subHtml = '<div class="fc-sub"><div class="sec-h"><h2>子任务</h2><span class="cnt">'+sts.filter(function(s){return s.done;}).length+'/'+sts.length+'</span></div>'
-        + sts.map(function(s){
-            return '<label class="st-row '+(s.done?'done':'')+'"><input type="checkbox" data-fact="subtoggle" data-sid="'+s.id+'" '+(s.done?'checked':'')+'> <span>'+SG.esc(s.text)+'</span></label>';
-          }).join('') + '</div>';
+    if(g){
+      var sts = g.subtasks||[];
+      if(sts.length){
+        subHtml = '<div class="fc-sub"><div class="sec-h"><h2>子任务</h2><span class="cnt">'+sts.filter(function(s){return s.done;}).length+'/'+sts.length+'</span></div>'
+          + sts.map(function(s){
+              return '<label class="st-row '+(s.done?'done':'')+'"><input type="checkbox" data-fact="subtoggle" data-sid="'+s.id+'" '+(s.done?'checked':'')+'> <span>'+SG.esc(s.text)+'</span></label>';
+            }).join('') + '</div>';
+      }
     }
 
     // 专注记录
@@ -266,23 +291,24 @@
     }else{
       histHtml += sess.map(function(r){
         var gg = SG.goalById(r.goalId);
+        var amtTxt = (+r.amount>0) ? (' · 打卡 +'+SG.num(r.amount)+(gg?SG.esc(gg.unit):'')) : '';
         return '<div class="rec"><span class="rd">'+SG.esc(SG.fmtMD(SG.parseYMD(r.date)))+'</span>'
           + '<span class="ra">'+SG.icon('timer')+SG.num(r.minutes)+' 分钟</span>'
-          + '<span class="rm">'+(gg?SG.esc(gg.name):'已删目标')+'</span>'
+          + '<span class="rm">'+(gg?SG.esc(gg.name):'已删目标')+amtTxt+'</span>'
           + '<button class="del" data-fact="delfoc" data-id="'+r.id+'" aria-label="删除">'+SG.icon('trash')+'</button></div>';
       }).join('');
     }
     histHtml += '</div>';
 
     var h = '<div class="card sec" style="padding:16px">'
-      + '<div class="field" style="margin-bottom:10px"><label>正在专注的目标</label><div class="goal-pick">'+goalChips+'</div></div>'
+      + '<div class="field" style="margin-bottom:10px"><label>正在专注的目标 <em>必选</em></label><div class="goal-pick">'+goalChips+'</div></div>'
       + '<div class="fc-timer">'
         + '<div class="ring" style="width:200px;height:200px;margin:6px auto 14px">'+ringSvg(curPct())
           + '<div class="rv"><b id="focTime" style="font-size:30px">'+timeStr(state.mode==='pomodoro'?state.totalSec:0)+'</b><span>'+(state.mode==='pomodoro'?'剩余':'已专注')+'</span></div></div>'
         + modeSeg + presets
       + '</div>'
       + '<div style="margin-top:14px">'+actions+'</div>'
-      + soundChips
+      + '<div class="fc-sound">'+soundChipsHtml()+'</div>'
       + subHtml
       + histHtml
       + '</div>';
@@ -292,8 +318,7 @@
   }
 
   /* ---------- 事件绑定 ---------- */
-  // 注意：#focusBody 在每次 renderFocus 时只替换 innerHTML，元素本身不变，
-  // 因此点击委托只绑定一次（见 bindBar），避免重复绑定导致一次点击触发多次。
+  // #focusBody 只换 innerHTML、元素本身不变，点击委托只绑定一次（见 bindBar）
   function focusClickHandler(e){
     var el = e.target.closest('[data-fact]'); if(!el) return;
     var fact = el.getAttribute('data-fact');
@@ -319,11 +344,9 @@
     else if(fact==='finish'){ stopFocus(); }
     else if(fact==='sound'){
       var snd = el.getAttribute('data-snd');
-      if(snd==='off'){ stopAllSound(); state.sound={white:false,pink:false,brown:false}; }
-      else {
-        state.sound[snd] = !state.sound[snd];
-        setSound(snd, state.sound[snd]);
-      }
+      if(!snd){ stopSound(); }
+      else if(state.soundId===snd){ stopSound(); }
+      else { playSound(snd); }
       renderFocus();
     }
     else if(fact==='subtoggle'){
@@ -344,7 +367,7 @@
     }
   }
 
-  // 指示器条按钮 + 专注页点击委托（均只绑定一次，元素在重渲染时不会被替换）
+  // 指示器条按钮 + 专注页点击委托（均只绑定一次）
   function bindBar(){
     var go = document.getElementById('focusBarGo');
     var stop = document.getElementById('focusBarStop');

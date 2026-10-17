@@ -300,9 +300,21 @@ textarea.inp{min-height:64px;resize:vertical;line-height:1.55}
 .fc-presets{display:flex;gap:8px;justify-content:center;margin-top:12px}
 .fc-presets .chip{cursor:pointer;border:1px solid var(--line);background:#fff;min-width:54px;justify-content:center}
 .fc-presets .chip.on{background:var(--pri);color:#fff;border-color:transparent}
-.fc-sound{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}
-.fc-sound .chip{cursor:pointer;border:1px solid var(--line);background:#fff}
-.fc-sound .chip.on{background:var(--pri-soft);color:var(--pri);border-color:var(--pri-soft2)}
+.fc-sound{margin-top:16px;border-top:1px solid var(--line2);padding-top:14px}
+.snd-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.snd-title{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:650;color:var(--ink2)}
+.snd-title svg{width:16px;height:16px}
+.snd-status{font-size:11.5px;color:var(--ink3)}
+.snd-group{display:flex;align-items:flex-start;gap:8px;margin:7px 0}
+.snd-cat{flex:none;width:34px;font-size:11.5px;color:var(--ink3);padding-top:6px}
+.snd-chips{display:flex;gap:7px;flex-wrap:wrap;flex:1}
+.fc-sound .chip{cursor:pointer;border:1px solid var(--line);background:#fff;min-height:32px}
+.fc-sound .chip.on{background:var(--pri);color:#fff;border-color:transparent}
+.snd-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.snd-foot .chip{cursor:pointer;border:1px solid var(--line);background:#fff;min-height:32px}
+.snd-foot .chip.on{background:var(--bg2);color:var(--ink2);border-color:var(--line)}
+.fc-hint{display:flex;align-items:center;gap:6px;justify-content:center;font-size:12px;color:var(--ink3);margin-top:9px}
+.fc-hint svg{width:14px;height:14px}
 .st-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card2);border:1px solid var(--line2);border-radius:10px;font-size:13.5px;margin-top:7px;cursor:pointer}
 .st-row input{width:18px;height:18px;flex:none;accent-color:var(--pri)}
 .st-row.done span{text-decoration:line-through;color:var(--ink3)}
@@ -1224,8 +1236,8 @@ function renderBoard(){
       shown.forEach(function(r){
         if(r.focus){
           h += '<div class="rec"><span class="rd">'+esc(fmtDateShort(r.date))+' 周'+WEEKDAYS[weekdayMon(parseYMD(r.date))]+'</span>'
-            + '<span class="ra">'+icon('timer')+'专注 '+num(r.minutes)+' 分钟</span>'
-            + '<span class="tag" style="background:var(--pri-soft);color:var(--pri)">专注</span>'
+            + '<span class="ra">'+icon('timer')+'专注 '+num(r.minutes)+' 分钟'+((+r.amount>0)?(' · +'+num(r.amount)+' '+esc(g.unit)):'')+'</span>'
+            + '<span class="tag" style="background:var(--pri-soft);color:var(--pri)">'+(+r.amount>0?'专注打卡':'专注')+'</span>'
             + '<button class="del" data-act="delrec" data-id="'+r.id+'" aria-label="删除这条记录" title="删除这条记录">'+icon('trash')+'</button></div>';
         }else{
           h += '<div class="rec"><span class="rd">'+esc(fmtDateShort(r.date))+' 周'+WEEKDAYS[weekdayMon(parseYMD(r.date))]+'</span>'
@@ -1704,10 +1716,24 @@ function addFocusMinutes(goalId, minutes){
   if(!g) return false;
   var m = Math.max(0, Math.round(minutes||0));
   if(m<=0) return false;
-  var rec = { id:uid(), goalId:goalId, date:ymd(today()), amount:0, minutes:m, bulk:false, focus:true, createdAt:Date.now(), demo:false };
+  var day = ymd(today());
+  // 当天是否已有打卡（amount>0），有则不重复计量，只记时长
+  var already = false;
+  store.records.forEach(function(r){
+    if(r.goalId===goalId && r.date===day && (+r.amount||0)>0) already = true;
+  });
+  var amt = 0;
+  if(!already && !isDone(g)){
+    var sg = suggestAmount(g, today());
+    if(sg.value>0) amt = Math.round(Math.min(sg.value, remaining(g))*100)/100;
+  }
+  var rec = { id:uid(), goalId:goalId, date:day, amount:amt, minutes:m, bulk:false, focus:true, createdAt:Date.now(), demo:false };
   store.records.push(rec);
+  if(amt>0) g.done = Math.round(((g.done||0)+amt)*100)/100;
   saveNow();
-  toast('专注 '+m+' 分钟已记入「'+g.name+'」', 'ok');
+  toast(amt>0
+    ? '专注 '+m+' 分钟 · 已自动打卡 '+num(amt)+' '+g.unit
+    : '专注 '+m+' 分钟已记入「'+g.name+'」', 'ok');
   refreshAll();
   logPush({op:'record', action:'add', at:Date.now(), rec:rec});
   return true;

@@ -98,7 +98,35 @@
     getReminder: function () { try { return JSON.parse(lsGet(KEY_REMINDER) || 'null'); } catch (e) { return null; } },
     setReminder: function (cfg) { try { lsSet(KEY_REMINDER, JSON.stringify(cfg)); } catch (e) {} },
     getBio: function () { return lsGet(KEY_BIO) === '1'; },
-    setBio: function (on) { lsSet(KEY_BIO, on ? '1' : '0'); }
+    setBio: function (on) { lsSet(KEY_BIO, on ? '1' : '0'); },
+
+    /* ---------- 一次性通知（专注结束等） ---------- */
+    notifyNow: function (title, body) {
+      if (AppNative.notifySupported()) {
+        var N = Capacitor.Plugins.LocalNotifications;
+        return N.schedule({ notifications: [{
+          title: title || '学习目标台',
+          body: body || '',
+          id: Math.floor(Date.now() / 1000) % 100000,
+          schedule: { at: new Date(Date.now() + 300) },
+          sound: null
+        }] }).catch(function () { return false; });
+      }
+      return Promise.resolve(false);
+    },
+
+    /* ---------- 触感反馈 ---------- */
+    haptic: function (style) {
+      try {
+        if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics) {
+          var H = Capacitor.Plugins.Haptics;
+          var t = (style === 'heavy') ? H.ImpactStyle.Heavy : (style === 'light' ? H.ImpactStyle.Light : H.ImpactStyle.Medium);
+          return H.impact({ style: t }).catch(function () {});
+        }
+      } catch (e) {}
+      if (navigator.vibrate) { try { navigator.vibrate(style === 'light' ? 20 : 45); } catch (e) {} }
+      return Promise.resolve();
+    }
   };
   window.AppNative = AppNative;
 

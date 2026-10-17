@@ -88,7 +88,7 @@ npx cap open android   # 或 npx cap open ios
 | 触发方式 | 流水线 | 产物 | 去哪下 |
 |---|---|---|---|
 | 推送 `master` | `build-android.yml` | 调试版 APK（`app-debug.apk`） | Actions → Artifacts |
-| 推送 `v*` 标签（如 `v1.0.1`） | `release.yml` | 签名版 AAB（`app-release.aab`） | Releases 页面 |
+| 推送 `v*` 标签（如 `v1.0.1`） | `release.yml` | 发布版 **APK + AAB + IPA**（见下） | Releases 页面 |
 
 ### 发一次新版本
 ```bash
@@ -97,9 +97,13 @@ git push origin v1.0.1
 ```
 CI 会自动：装 SDK → 签名构建 AAB → 发布到 GitHub Release（标签名作为版本名，如 `1.0.1`）。
 
-### 两种产物用途
-- **Debug APK**：`adb install app-debug.apk` 直接装手机测试。
-- **Release AAB**：用于上架 Google Play（Play 要求的格式，不能直接安装到手机）。
+### 三种产物用途
+- **Debug APK**（`app-debug.apk`）：`adb install app-debug.apk` 直接装手机测试（来自 `master` 构建）。
+- **Release APK**（`app-release.apk`）：已签名，可 `adb install` 直接安装，也便于第三方分发。
+- **Release AAB**（`app-release.aab`）：用于上架 Google Play（Play 要求的格式，不能直接安装到手机）。
+- **Release IPA**（`app-release.ipa`）：iOS 安装包。提供 Apple 签名密钥后产出**可安装** IPA；未提供则产出**未签名 IPA**（仅演示打包链路，需用 `ios-deploy` / Xcode 重签后才能装真机）。
+
+> Release 流水线为三段式：`android` 作业（Ubuntu，出 APK+AAB）→ `ios` 作业（macOS，出 IPA）→ `release` 作业汇总三者上传到同一个 GitHub Release。
 
 ---
 
@@ -109,6 +113,19 @@ CI 会自动：装 SDK → 签名构建 AAB → 发布到 GitHub Release（标�
 - 本地备份的密钥库位于 `keys/release.keystore`（已被 `.gitignore` 忽略）。
 - **密钥库是同一应用持续发版的法定凭证，一旦丢失将无法用新 AAB 更新旧应用**，请务必离线备份。
 - 生物识别锁（`@capacitor/biometric-authentication`）因受限网络未预装，代码已接好；在可联网机器执行 `npm i` 该插件并把插件块加回 `capacitor.config.json` 即可启用（不装不影响其他功能）。
+
+### iOS 签名密钥（产出可安装 IPA 所需）
+
+默认情况下 Release 流水线会产出**未签名 IPA**（仅验证打包链路）。要产出可安装到 iPhone 的 IPA，需在仓库 **Settings → Secrets and variables → Actions** 中添加以下四个密钥（均来自你的 Apple Developer 账号）：
+
+| 密钥名 | 内容 |
+|---|---|
+| `IOS_P12_BASE64` | 发布/开发证书导出的 `.p12`，经 `base64` 编码 |
+| `IOS_P12_PASSWORD` | 导出 `.p12` 时设置的密码 |
+| `IOS_PROVISIONING_PROFILE_BASE64` | `.mobileprovision` 描述文件，经 `base64` 编码 |
+| `IOS_TEAM_ID` | 你的 10 位 Apple Team ID |
+
+> 提供后，CI 会自动导入证书、安装描述文件，按 `com.studygoal.app` 出 `app-store` 方式的签名 IPA。未提供则自动降级为未签名 IPA，不影响 Android 与 Release 发布。
 
 ---
 

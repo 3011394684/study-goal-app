@@ -1,4 +1,4 @@
-name: Release AAB
+name: Release Build
 
 # 触发：推送版本标签 v*.*.*（如 v1.0.0），或手动触发
 on:
@@ -11,8 +11,9 @@ permissions:
   contents: write   # 需要写权限以创建 GitHub Release
 
 jobs:
-  release:
-    name: Build signed AAB & publish
+  # ---------- Android：签名 APK + AAB ----------
+  android:
+    name: Build Android APK & AAB
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -65,18 +66,131 @@ jobs:
         run: |
           sed -i 's#mirrors.cloud.tencent.com/gradle#services.gradle.org/distributions#' android/gradle/wrapper/gradle-wrapper.properties
 
-      - name: Build signed release AAB
+      - name: Build signed release APK & AAB
         working-directory: android
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --no-daemon -PVERSION_NAME=${GITHUB_REF_NAME#v}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon -PVERSION_NAME=${GITHUB_REF_NAME#v}
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+  # ---------- iOS：IPA（有签名密钥出可安装包，否则出未签名包） ----------
+  ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install web deps & sync iOS shell
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Decode Apple signing assets (仅在提供密钥时)
+        id: sign
+        if: ${{ secrets.IOS_P12_BASE64 != '' }}
+        env:
+          P12: ${{ secrets.IOS_P12_BASE64 }}
+          P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          TEAM: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          echo "$P12" | base64 --decode > cert.p12
+          echo "$PROFILE" | base64 --decode > profile.mobileprovision
+          security create-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "$P12_PASS" -T /usr/bin/codesign
+          security list-keychains -d user -s build.keychain login.keychain
+          security unlock-keychain -p "" build.keychain
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          PROFILE_NAME=$(security cms -D -i profile.mobileprovision 2>/dev/null | plutil -extract Name raw -)
+          echo "TEAM=$TEAM" >> "$GITHUB_ENV"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "SIGNED=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios/App
+        run: pod install --repo-update
+
+      - name: Build & export IPA
+        working-directory: ios/App
+        run: |
+          set -e
+          if [ "${{ steps.sign.outputs.SIGNED }}" = "true" ]; then
+            echo "== 签名构建 =="
+            xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+              -archivePath build/App.xcarchive \
+              CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$TEAM" \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+              CODE_SIGN_IDENTITY="iPhone Distribution" clean archive
+            cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.studygoal.app</key><string>$PROFILE_NAME</string>
+            </dict>
+          </dict></plist>
+          EOF
+            xcodebuild -exportArchive -archivePath build/App.xcarchive \
+              -exportOptionsPlist ExportOptions.plist -exportPath build
+            cp build/App.ipa build/app-release.ipa
+          else
+            echo "== 未提供 Apple 签名密钥：产出未签名 IPA（仅演示打包链路，不可直接安装）=="
+            xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+              -archivePath build/App.xcarchive \
+              CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+              clean archive
+            mkdir -p Payload
+            cp -r build/App.xcarchive/Products/Applications/*.app Payload/
+            (cd Payload && zip -r ../build/app-release.ipa .)
+          fi
+          ls -lh build/app-release.ipa
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-artifacts
+          path: ios/App/build/app-release.ipa
+          if-no-files-found: error
+
+  # ---------- 汇总发布到 GitHub Release ----------
+  release:
+    name: Publish to GitHub Release
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/bundle/release/app-release.aab
+          files: |
+            artifacts/android-artifacts/app-release.apk
+            artifacts/android-artifacts/app-release.aab
+            artifacts/ios-artifacts/app-release.ipa
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false

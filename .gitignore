@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Gradle / Android build outputs
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/app/release/
+*.apk
+*.aab
+
+# iOS build outputs
+ios/App/build/
+ios/App/Pods/
+ios/App/DerivedData/
+
+# Local SDK path / secrets (never commit)
+android/local.properties
+*.keystore
+*.jks
+GoogleService-Info.plist
+google-services.json
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.iml

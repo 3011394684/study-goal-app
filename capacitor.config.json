@@ -1,0 +1,14 @@
+{
+  "appId": "com.studygoal.app",
+  "appName": "学习目标台",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#7c5cff"
+    }
+  }
+}

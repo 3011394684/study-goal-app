@@ -147,15 +147,14 @@
     var gid = state.goalId;
     resetTimer();
     if(minutes>0 && gid){
-      var ok = SG.addFocusMinutes(gid, minutes);
-      if(ok){
-        var g = SG.goalById(gid);
-        if(!auto) SG.toast('已结束，记入 '+minutes+' 分钟','ok');
-        if(window.AppNative){
-          try{ window.AppNative.haptic('medium'); }catch(e){}
-          try{ window.AppNative.notifyNow('专注结束', '已记入 '+(g?g.name:'目标')+' '+minutes+' 分钟'); }catch(e){}
-        }
+      if(window.AppNative){
+        try{ window.AppNative.haptic('medium'); }catch(e){}
+        try{ window.AppNative.notifyNow('专注结束', '本次专注 '+minutes+' 分钟，去确认打卡吧'); }catch(e){}
       }
+      // 弹出与打卡页一致的确认弹窗，时长固定为本次专注时长
+      SG.focusCheckin(gid, minutes);
+    } else if(gid){
+      SG.toast('专注时间太短，未记录','');
     }
     stopSound();
     updateBar();

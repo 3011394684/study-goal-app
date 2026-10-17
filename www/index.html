@@ -121,6 +121,9 @@ a{color:var(--pri);text-decoration:none}
 .grid{display:grid;gap:12px;grid-template-columns:1fr}
 .gcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);padding:14px;position:relative;overflow:hidden;transition:box-shadow .2s,transform .2s}
 .gcard:hover{box-shadow:var(--sh2)}
+.gcard.todaydone{border-color:var(--ok-line)}
+.gcard.todaydone .stripe{background:var(--ok)}
+.gcard.todaydone .gc-dot{background:var(--ok)}
 .gcard .stripe{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
 .gcard .gc-top{display:flex;align-items:flex-start;gap:10px}
 .gc-dot{width:10px;height:10px;border-radius:4px;background:var(--c);flex:none;margin-top:6px}
@@ -1048,6 +1051,10 @@ function renderTodayGoals(){
       var pr = { high:0, mid:1, low:2, none:3 };
       var pa = pr[a.priority||'none']!=null?pr[a.priority||'none']:3, pb = pr[b.priority||'none']!=null?pr[b.priority||'none']:3;
       if(pa!==pb) return pa-pb;
+      // 今天已打卡的排到后面（打卡后顺序立即变化）
+      var ca = recsByDate(a.id)[ymd(t)], cb = recsByDate(b.id)[ymd(t)];
+      var qa = (ca && ca.amount>0) ? 1 : 0, qb = (cb && cb.amount>0) ? 1 : 0;
+      if(qa!==qb) return qa-qb;
       return (a.deadline||'') < (b.deadline||'') ? -1 : 1;
     });
   var doneList = store.goals.filter(isDone);
@@ -1078,7 +1085,7 @@ function goalCardHtml(g, t, finished){
   var pct = progressOf(g);
   var todayCell = recMap[ymd(t)];
   var todayQty = todayCell? todayCell.amount : 0;
-  var h = '<article class="gcard" style="--c:'+esc(g.color||COLORS[0])+'">';
+  var h = '<article class="gcard'+(todayQty>0?' todaydone':'')+'" style="--c:'+esc(g.color||COLORS[0])+'">';
   h += '<span class="stripe"></span>';
   h += '<div class="gc-top"><span class="gc-dot"></span><div style="flex:1;min-width:0">';
   h += '<div class="gc-name">'+esc(g.name)+'</div>';
@@ -1106,7 +1113,7 @@ function goalCardHtml(g, t, finished){
     h += '<div class="bar ok"><i style="width:100%"></i></div>';
   }else{
     h += '<div class="gc-nums"><span class="big">'+num(remaining(g))+'</span><span class="of">'+esc(g.unit)+' 待完成 · 已做 '+num(g.done)+' / '+num(g.total)+'</span><span class="pct">'+Math.round(pct)+'%</span></div>';
-    h += '<div class="bar'+(st.overdue?' late':'')+'"><i style="width:'+pct.toFixed(1)+'%"></i></div>';
+    h += '<div class="bar'+(st.overdue?' late':(todayQty>0?' ok':''))+'"><i style="width:'+pct.toFixed(1)+'%"></i></div>';
     h += '<div class="gc-meta"><span class="mchip"><span class="muted">今日建议</span><b>'+num(sg.value)+' '+esc(g.unit)+'</b></span>';
     h += '<span class="mchip'+(sg.overdue?' late':'')+'">'+icon('cal')+(sg.overdue?'截止已过':('剩 <b>'+sg.days+'</b> 天'))+'</span>';
     h += metaChips(g, recMap, t);
@@ -1369,7 +1376,8 @@ function renderMine(){
   h += '</div>';
 
   h += '<div class="listcard">';
-  h += '<div class="lrow"><span class="li">'+icon('spark')+'</span><div class="lt"><b>清空示例数据</b><span>只移除预置的 3 个示例目标及其记录</span></div><button class="btn sm" data-act="demos">清空</button></div>';
+  h += '<div class="lrow"><span class="li">'+icon('spark')+'</span><div class="lt"><b>导入测试数据</b><span>写入 3 个示例目标与记录，方便体验（会覆盖当前数据）</span></div><button class="btn sm" data-act="seed">导入</button></div>';
+  h += '<div class="lrow"><span class="li">'+icon('trash')+'</span><div class="lt"><b>清空示例数据</b><span>只移除示例目标及其记录，保留你自己创建的数据</span></div><button class="btn sm" data-act="demos">清空</button></div>';
   h += '<div class="lrow"><span class="li">'+icon('info')+'</span><div class="lt"><b>关于数据</b><span>'+(remote.ok?'已连接云端数据表，本机同时留有副本':'数据存在本机浏览器（localStorage）')+'</span></div></div>';
   h += '</div>';
 
@@ -1711,13 +1719,28 @@ function deleteRecord(id){
 }
 
 /* ---- 专注：把一次专注折算为目标「投入分钟」 ---- */
-function addFocusMinutes(goalId, minutes){
+function writeFocusRecord(goalId, minutes, amount){
   var g = goalById(goalId);
   if(!g) return false;
   var m = Math.max(0, Math.round(minutes||0));
   if(m<=0) return false;
+  var amt = Math.max(0, Math.round((amount||0)*100)/100);
+  var rec = { id:uid(), goalId:goalId, date:ymd(today()), amount:amt, minutes:m, bulk:false, focus:true, createdAt:Date.now(), demo:false };
+  store.records.push(rec);
+  if(amt>0) g.done = Math.round(((g.done||0)+amt)*100)/100;
+  saveNow();
+  toast(amt>0
+    ? '专注 '+m+' 分钟 · 已打卡 '+num(amt)+' '+g.unit
+    : '专注 '+m+' 分钟已记录（仅时长）', 'ok');
+  refreshAll();
+  logPush({op:'record', action:'add', at:Date.now(), rec:rec});
+  return true;
+}
+// 自动模式：当天首次专注按建议量打卡（保留给非交互场景）
+function addFocusMinutes(goalId, minutes){
+  var g = goalById(goalId);
+  if(!g) return false;
   var day = ymd(today());
-  // 当天是否已有打卡（amount>0），有则不重复计量，只记时长
   var already = false;
   store.records.forEach(function(r){
     if(r.goalId===goalId && r.date===day && (+r.amount||0)>0) already = true;
@@ -1727,15 +1750,64 @@ function addFocusMinutes(goalId, minutes){
     var sg = suggestAmount(g, today());
     if(sg.value>0) amt = Math.round(Math.min(sg.value, remaining(g))*100)/100;
   }
-  var rec = { id:uid(), goalId:goalId, date:day, amount:amt, minutes:m, bulk:false, focus:true, createdAt:Date.now(), demo:false };
-  store.records.push(rec);
-  if(amt>0) g.done = Math.round(((g.done||0)+amt)*100)/100;
-  saveNow();
-  toast(amt>0
-    ? '专注 '+m+' 分钟 · 已自动打卡 '+num(amt)+' '+g.unit
-    : '专注 '+m+' 分钟已记入「'+g.name+'」', 'ok');
-  refreshAll();
-  logPush({op:'record', action:'add', at:Date.now(), rec:rec});
+  return writeFocusRecord(goalId, minutes, amt);
+}
+/* 专注完成后的确认弹窗：完成量可改，时长锁定为专注时长 */
+function focusCheckin(goalId, minutes){
+  var g = goalById(goalId);
+  if(!g) return false;
+  var m = Math.max(0, Math.round(minutes||0));
+  if(m<=0) return false;
+  var day = ymd(today());
+  var already = false;
+  store.records.forEach(function(r){
+    if(r.goalId===goalId && r.date===day && (+r.amount||0)>0) already = true;
+  });
+  var sg = suggestAmount(g, today());
+  var pre = already ? 0 : Math.max(0, Math.round(Math.min(sg.value||0, remaining(g))*100)/100);
+  var settled = false;
+  var mask = document.getElementById('mask');
+  function onMask(e){ if(e.target===mask) settle(0); }
+  function onKey(e){ if(e.key==='Escape') settle(0); }
+  function settle(amt){
+    if(settled) return;
+    settled = true;
+    try{ mask.removeEventListener('click', onMask); }catch(e){}
+    try{ document.removeEventListener('keydown', onKey); }catch(e){}
+    closeModal();
+    writeFocusRecord(goalId, m, amt);
+  }
+  openModal(
+    '<div class="mh"><h3>专注完成 · '+esc(g.name)+'</h3><button class="icon-btn" data-fct="timeonly" aria-label="关闭">'+icon('x')+'</button></div>'
+    + '<form id="fcForm" class="mb" novalidate>'
+    + '<div class="notice pri">'+icon('timer')+' 本次专注 <b>'+m+' 分钟</b>。<br><span class="xs">时长由专注自动记录，不可修改；完成量可以改。</span>'+(already?'<br><span class="xs">今天已经打过卡，这里只累计专注时长。</span>':'')+'</div>'
+    + '<div class="row2"><div class="field"><label>完成量（'+esc(g.unit)+'）</label><input class="inp" data-autofocus name="amount" type="number" inputmode="decimal" min="0" step="any" value="'+num(pre)+'"></div>'
+    + '<div class="field"><label>投入分钟 <em>固定</em></label><input class="inp" type="number" value="'+m+'" readonly disabled style="background:var(--bg2);color:var(--ink3)"></div></div>'
+    + '<div class="hintline">'+icon('info')+'<span>填 0 表示只记时长、不计打卡；确认后会更新完成量与今日排序。</span></div>'
+    + '</form>'
+    + '<div class="mf"><button class="btn" data-fct="timeonly">只记时长</button><button class="btn pri" id="fcSave">确认打卡</button></div>'
+  );
+  var modal = document.getElementById('modal');
+  modal.querySelectorAll('[data-fct="timeonly"]').forEach(function(b){
+    b.addEventListener('click', function(){ settle(0); });
+  });
+  var saveBtn = document.getElementById('fcSave');
+  if(saveBtn) saveBtn.addEventListener('click', function(){
+    var inp = document.querySelector('#fcForm [name=amount]');
+    var a = parseFloat(inp && inp.value);
+    if(isNaN(a) || a<0){ toast('完成量需要是不小于 0 的数字','err'); return; }
+    settle(a);
+  });
+  var form = document.getElementById('fcForm');
+  if(form) form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var inp = form.querySelector('[name=amount]');
+    var a = parseFloat(inp.value);
+    if(isNaN(a) || a<0){ toast('完成量需要是不小于 0 的数字','err'); return; }
+    settle(a);
+  });
+  mask.addEventListener('click', onMask);
+  document.addEventListener('keydown', onKey);
   return true;
 }
 
@@ -1938,6 +2010,15 @@ function bindGlobal(){
       case 'export': exportJSON(); break;
       case 'import': importJSON(); break;
       case 'migrate': migrateOld(); break;
+      case 'seed':
+        confirmModal('导入测试数据？','将写入 3 个示例目标与若干记录，<b>覆盖当前全部数据</b>。建议先导出备份。','导入并覆盖', true).then(function(ok){
+          if(!ok) return;
+          seed();
+          saveNow();
+          setTab('today');
+          toast('测试数据已导入','ok');
+        });
+        break;
       case 'demos': clearDemos(); break;
       case 'wipe': wipeAll(); break;
     }
@@ -2159,6 +2240,7 @@ function buildTime(off){
 window.SG = {
   store: store, goalById: goalById, icon: icon, toast: toast,
   refreshAll: refreshAll, setTab: setTab, addFocusMinutes: addFocusMinutes,
+  focusCheckin: focusCheckin, writeFocusRecord: writeFocusRecord,
   saveNow: saveNow, saveLocal: saveLocal,
   openModal: openModal, closeModal: closeModal, confirmModal: confirmModal,
   uid: uid, ymd: ymd, today: today, num: num, esc: esc, clamp: clamp,
@@ -2183,10 +2265,19 @@ function bindExtras(){
 function boot(){
   var loaded = loadLocal();
   if(!loaded){
-    seed();
+    // 首次启动为空数据；示例数据可在「我的 → 导入测试数据」按需导入
     saveLocal();
   }else{
     migrate(store);
+  }
+  // 一次性清理历史版本带入的默认示例数据（仅当数据里全是示例时；之后导入的测试数据不受影响）
+  store.ui = store.ui || {};
+  if(!store.ui.seedClearedV121){
+    if(store.goals.length && store.goals.every(function(g){ return g.demo; })){
+      store.goals = []; store.records = []; store.notes = {};
+    }
+    store.ui.seedClearedV121 = true;
+    saveLocal();
   }
   ui.weekStart = null;
   bindGlobal();

@@ -13,7 +13,7 @@
 - **智能状态**：完成率、连续打卡天数（每周一自动配 1 个休息日，第一次漏打不断、第二次才断）、预计完成日（按近 7 天平均速度推算，样本不足显示「暂无推算」，**绝不编数字**）；与截止日比较显示提前 / 拖后。
 - **今日要处理**：昨日漏打卡自动置顶——本周首次漏打用温和黄卡解释休息日，用完则红卡解释滚入今日；逾期目标显示天数并给「立即打卡」「调整计划」两个出口。
 - **打卡**：一天可多次、选填分钟数、可补记最近 6 天（带「补」标并按真实日期参与连续天数与推算）；目标达成有彩带动效。
-- **专注模式（融合「茶·高效待办」）**：新增「专注」Tab——**必须先选一个目标**才能开始；番茄钟（15/25/30/45 分）或正计时干活。内置**真实环境声景**（雨 / 自然 / 动物 / 场所 / 噪音 / 双耳节拍，音源与 `tea.awacode.top` 同源，moodist / Pixabay CC0），一次只能选一种，离线可用。专注结束会弹出**与打卡页一致的确认弹窗**：完成量可改，投入分钟锁定为本次专注时长；确认后计入完成量并写入投入分钟，也可选「只记时长」。提前结束同样弹窗记录。时长直接喂给看板与周报，既有“坐了多久”也有“做到哪了”。结束还触发本地通知与触感反馈。
+- **专注模式**：新增「专注」Tab——**必须先选一个目标**才能开始；番茄钟（15/25/30/45 分）或正计时干活。内置 **13 种真实环境声景**（雨 / 自然 / 动物 / 场所 / 噪音 / 双耳节拍，已随应用打包，离线可用），一次只能选一种。专注结束会弹出**与打卡页一致的确认弹窗**：完成量可改，投入分钟锁定为本次专注时长；确认后计入完成量并写入投入分钟，也可选「只记时长」。提前结束同样弹窗记录。时长直接喂给看板与周报，既有“坐了多久”也有“做到哪了”。结束还触发本地通知与触感反馈。
 - **五 Tab 布局**
   - **今日**：新建 / 编辑 / 二次确认删除，待处理目标卡。
   - **专注**：未选目标不能开始；番茄钟 / 正计时；13 种真实声景（雨 / 自然 / 动物 / 场所 / 噪音 / 双耳节拍，单选）。结束时弹出打卡确认弹窗（时长固定），提前结束也弹窗记录。目标支持优先级（高 / 中 / 低 / 无，影响今日排序）与子任务拆解（专注时可逐项打勾）。
@@ -43,16 +43,15 @@ study-goal-app/
 ├── www/                      # Web 应用核心（即学习目标台）
 │   ├── index.html            # 单文件页面，逻辑 100% 复用（含专注页）
 │   ├── focus.js              # 专注模块：计时引擎 + 真实声景播放 + 子任务/记录联动
-│   ├── sounds/               # 真实环境声景（13 个，已压缩；moodist / Pixabay CC0）
+│   ├── sounds/               # 真实环境声景（13 个，已压缩，随应用离线提供）
 │   └── native.js             # 原生桥接层：通知 / 生物识别 / 分享 / 同步预留 / 触感
-├── android/                  # Capacitor 生成的 Android 原生工程（含签名配置）
+├── android/                  # Capacitor 生成的 Android 原生工程
 ├── ios/                      # Capacitor 生成的 iOS 原生工程（含通知用途描述）
-├── keys/                     # ⚠️ 本地签名密钥目录（已被 .gitignore 忽略，切勿提交）
 ├── capacitor.config.json     # appId=com.studygoal.app，配色 / 通知配置
 ├── package.json              # Capacitor 依赖与脚本
 └── .github/workflows/
-    ├── build-android.yml     # 推 master → 自动出 debug APK（Actions 产物可下载）
-    └── release.yml           # 打 v* 标签 → 自动出签名 AAB 并发到 GitHub Release
+    ├── build-android.yml     # 推 master → 自动出 debug APK（CI 产物可下载）
+    └── release.yml           # 打 v* 标签 → 自动出 APK/AAB/IPA 并发到 Release
 ```
 
 ---
@@ -80,76 +79,60 @@ npx cap sync
 npx cap open android   # 或 npx cap open ios
 ```
 
-> 本地沙箱为加速构建，`android/gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl` 指向了腾讯镜像；
-> CI 运行时会自动切回官方源 `services.gradle.org`，不影响你本机配置。若你本机官方源可达，可改回原值。
+> 若本机为加速构建配置了镜像源，CI 会自动切换为官方源，不影响你本机配置。
 
 ---
 
 ## 📦 自动打包 / 发版（CI）
 
-仓库已配置两条 GitHub Actions 流水线，**无需本地安装 SDK 即可出包**：
+仓库已配置两条 CI 流水线，**无需本地安装 SDK 即可出包**：
 
 | 触发方式 | 流水线 | 产物 | 去哪下 |
 |---|---|---|---|
-| 推送 `master` | `build-android.yml` | 调试版 APK（`app-debug.apk`） | Actions → Artifacts |
-| 推送 `v*` 标签（如 `v1.0.1`） | `release.yml` | 发布版 **APK + AAB + IPA**（见下） | Releases 页面 |
+| 推送 `master` | `build-android.yml` | 调试版 APK（`app-debug.apk`） | CI → Artifacts |
+| 推送 `v*` 标签（如 `v1.0.1`） | `release.yml` | 发布版 **APK + AAB + IPA**（见下） | Release 页面 |
 
 ### 发一次新版本
 ```bash
 git tag -a v1.0.1 -m "本周修复打卡提醒"
 git push origin v1.0.1
 ```
-CI 会自动：装 SDK → 签名构建 AAB → 发布到 GitHub Release（标签名作为版本名，如 `1.0.1`）。
+CI 会自动构建 APK / AAB / IPA 并发布到 Release（标签名作为版本名，如 `1.0.1`）。
 
 ### 三种产物用途
 - **Debug APK**（`app-debug.apk`）：`adb install app-debug.apk` 直接装手机测试（来自 `master` 构建）。
-- **Release APK**（`app-release.apk`）：已签名，可 `adb install` 直接安装，也便于第三方分发。
-- **Release AAB**（`app-release.aab`）：用于上架 Google Play（Play 要求的格式，不能直接安装到手机）。
-- **Release IPA**（`app-release.ipa`）：iOS 安装包。提供 Apple 签名密钥后产出**可安装** IPA；未提供则产出**未签名 IPA**（仅演示打包链路，需用 `ios-deploy` / Xcode 重签后才能装真机）。
+- **Release APK**（`app-release.apk`）：可直接安装，也便于分发。
+- **Release AAB**（`app-release.aab`）：用于上架应用商店（该格式不能直接安装到手机）。
+- **Release IPA**（`app-release.ipa`）：iOS 安装包，需在 macOS 上通过 Xcode 安装到真机。
 
-> Release 流水线为三段式：`android` 作业（Ubuntu，出 APK+AAB）→ `ios` 作业（macOS，出 IPA）→ `release` 作业汇总三者上传到同一个 GitHub Release。
+> Release 流水线为三段式：`android` 作业（Ubuntu，出 APK+AAB）→ `ios` 作业（macOS，出 IPA）→ `release` 作业汇总三者上传到同一个 Release。
 
 ---
 
-## 🔐 签名与安全
+## 🔒 数据与隐私
 
-- 发布签名用的密钥库已存入仓库 **GitHub Secrets**（`KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`），不进入源码。
-- 本地备份的密钥库位于 `keys/release.keystore`（已被 `.gitignore` 忽略）。
-- **密钥库是同一应用持续发版的法定凭证，一旦丢失将无法用新 AAB 更新旧应用**，请务必离线备份。
-- 生物识别锁（`@capacitor/biometric-authentication`）因受限网络未预装，代码已接好；在可联网机器执行 `npm i` 该插件并把插件块加回 `capacitor.config.json` 即可启用（不装不影响其他功能）。
-
-### iOS 签名密钥（产出可安装 IPA 所需）
-
-默认情况下 Release 流水线会产出**未签名 IPA**（仅验证打包链路）。要产出可安装到 iPhone 的 IPA，需在仓库 **Settings → Secrets and variables → Actions** 中添加以下四个密钥（均来自你的 Apple Developer 账号）：
-
-| 密钥名 | 内容 |
-|---|---|
-| `IOS_P12_BASE64` | 发布/开发证书导出的 `.p12`，经 `base64` 编码 |
-| `IOS_P12_PASSWORD` | 导出 `.p12` 时设置的密码 |
-| `IOS_PROVISIONING_PROFILE_BASE64` | `.mobileprovision` 描述文件，经 `base64` 编码 |
-| `IOS_TEAM_ID` | 你的 10 位 Apple Team ID |
-
-> 提供后，CI 会自动导入证书、安装描述文件，按 `com.studygoal.app` 出 `app-store` 方式的签名 IPA。未提供则自动降级为未签名 IPA，不影响 Android 与 Release 发布。
+- 数据默认只保存在本机（`localStorage` / WebView），不上传服务器；换设备时请用「导出 / 导入 JSON」迁移。
+- 生物识别锁依赖可选插件，未安装时自动降级，不影响其他功能。
 
 ---
 
 ## 📱 安装与体验
 
 - **Web / PWA**：浏览器打开 `www/index.html`，或部署为静态站点后「添加到主屏幕」当 App 用。
-- **Android 测试**：下载 Actions 产物 `app-debug.apk` → `adb install app-debug.apk`。
-- **iOS**：在 macOS 上 `npx cap open ios`，用 Xcode 选证书 / 签名后真机或 TestFlight 安装。
+- **Android 测试**：下载 CI 产物 `app-debug.apk` → `adb install app-debug.apk`。
+- **iOS**：在 macOS 上 `npx cap open ios`，用 Xcode 连接真机安装。
 
 ---
 
 ## 🗺️ 后续可演进
 
-- Release 签名 + 自动发 AAB + IPA（✅ 已完成）
-- 专注模式融合「茶·高效待办」：番茄钟 / 正计时 / Web Audio 声景 / 子任务（✅ 已完成）
+- 自动打包发布 APK / AAB / IPA（✅ 已完成）
+- 专注模式：番茄钟 / 正计时 / 真实声景 / 子任务（✅ 已完成）
 - 目标优先级与子任务拆解（✅ 已完成）
 - 接入真实云同步后端（存储层已预留 `StorageAdapter` / `window.StudyGoalSync`）
 - Widget、系统分享面板深度集成
 - 将「看板 SVG 图表」迁移为原生模块以进一步提升性能
-- 升级被标记废弃的 action 版本（Node 20 / setup-java v4 / ubuntu-latest 迁移预告）
+- 升级 CI 中已标记废弃的依赖版本，保持构建环境更新
 
 ---
 

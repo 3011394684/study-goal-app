@@ -20,6 +20,7 @@ ios/App/DerivedData/
 android/local.properties
 *.keystore
 *.jks
+keys/
 GoogleService-Info.plist
 google-services.json
 

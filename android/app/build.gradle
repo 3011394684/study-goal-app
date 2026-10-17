@@ -8,7 +8,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName project.hasProperty('VERSION_NAME') ? project.VERSION_NAME : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +16,30 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def ksBase64 = System.getenv("KEYSTORE_BASE64")
+            def ksPass = System.getenv("KEYSTORE_PASSWORD")
+            def kAlias = System.getenv("KEY_ALIAS")
+            def kPass = System.getenv("KEY_PASSWORD")
+            if (ksBase64 != null && ksPass != null && kAlias != null && kPass != null) {
+                def ksFile = file("$rootDir/release-keystore.jks")
+                ksFile.bytes = java.util.Base64.decoder.decode(ksBase64)
+                storeFile ksFile
+                storePassword ksPass
+                keyAlias kAlias
+                keyPassword kPass
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 仅在 CI 提供密钥时启用签名；本地无密钥则产出未签名包，便于调试
+            if (System.getenv("KEYSTORE_BASE64") != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

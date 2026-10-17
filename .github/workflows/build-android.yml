@@ -35,12 +35,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages & accept licenses
+      - name: Set up Android SDK (manual, 绕过 setup-android action 的 tools 包缺陷)
         run: |
-          yes | sdkmanager --licenses || true
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+          command -v unzip >/dev/null 2>&1 || sudo apt-get install -y unzip
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip
+          unzip -q /tmp/cmdtools.zip -d $ANDROID_HOME/cmdline-tools
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Cache Gradle
@@ -53,7 +60,7 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Use official Gradle distribution (GitHub runners)
-        # 本地沙箱用的是腾讯镜像，CI  runner 访问官方源更稳；仅改 wrapper 指向，不动本地文件
+        # 本地沙箱用的是腾讯镜像，CI runner 访问官方源更稳；仅改 wrapper 指向，不动本地文件
         run: |
           sed -i 's#mirrors.cloud.tencent.com/gradle#services.gradle.org/distributions#' android/gradle/wrapper/gradle-wrapper.properties
 

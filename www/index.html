@@ -258,6 +258,13 @@ textarea.inp{min-height:64px;resize:vertical;line-height:1.55}
 .quick button:hover{border-color:var(--pri2);color:var(--pri)}
 .hintline{font-size:11.5px;color:var(--ink3);margin-top:5px;display:flex;gap:5px;align-items:flex-start;line-height:1.45}
 .hintline svg{width:13px;height:13px;margin-top:1px;flex:none}
+.subtask-list{display:flex;flex-direction:column;gap:6px}
+.subtask-list .st{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;font-size:13px}
+.subtask-list .st .st-tx{flex:1;min-width:0;word-break:break-word}
+.subtask-list .st.done .st-tx{text-decoration:line-through;color:var(--ink3)}
+.subtask-list .st .st-del{border:0;background:transparent;color:#b9bdcb;width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center}
+.subtask-list .st .st-del:hover{color:var(--late);background:var(--late-soft)}
+.subtask-list .empty{font-size:12.5px;color:var(--ink3);padding:2px 2px 4px}
 .notice{border-radius:10px;padding:9px 11px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
 .notice.pri{background:var(--pri-soft);color:#4b3d94;border:1px solid #e3dcfd}
 .notice.warn{background:var(--warn-soft);color:#7d5710;border:1px solid var(--warn-line)}
@@ -285,6 +292,29 @@ textarea.inp{min-height:64px;resize:vertical;line-height:1.55}
 .tab .ic{width:22px;height:22px;stroke-width:1.8}
 .tab.on{color:var(--pri)}
 .tab.on::before{content:"";position:absolute;top:0;width:26px;height:3px;border-radius:0 0 3px 3px;background:var(--pri)}
+/* ---------- 专注页 ---------- */
+.goal-pick{display:flex;gap:8px;flex-wrap:wrap}
+.goal-pick .chip{cursor:pointer;border:1px solid var(--line);background:#fff}
+.goal-pick .chip.on{background:var(--pri);color:#fff;border-color:transparent}
+.fc-timer{text-align:center}
+.fc-presets{display:flex;gap:8px;justify-content:center;margin-top:12px}
+.fc-presets .chip{cursor:pointer;border:1px solid var(--line);background:#fff;min-width:54px;justify-content:center}
+.fc-presets .chip.on{background:var(--pri);color:#fff;border-color:transparent}
+.fc-sound{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+.fc-sound .chip{cursor:pointer;border:1px solid var(--line);background:#fff}
+.fc-sound .chip.on{background:var(--pri-soft);color:var(--pri);border-color:var(--pri-soft2)}
+.st-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card2);border:1px solid var(--line2);border-radius:10px;font-size:13.5px;margin-top:7px;cursor:pointer}
+.st-row input{width:18px;height:18px;flex:none;accent-color:var(--pri)}
+.st-row.done span{text-decoration:line-through;color:var(--ink3)}
+.fc-sub,.fc-hist{margin-top:16px}
+.fc-hist .rec .ra{display:inline-flex;align-items:center;gap:4px}
+/* ---------- 专注进行中常驻指示条 ---------- */
+.focus-bar{position:fixed;left:50%;transform:translateX(-50%);top:8px;z-index:70;display:flex;align-items:center;gap:8px;background:rgba(45,38,82,.96);color:#fff;padding:7px 8px 7px 13px;border-radius:99px;box-shadow:0 8px 24px rgba(45,38,82,.32);font-size:12.5px;max-width:calc(100% - 24px);backdrop-filter:blur(6px)}
+.focus-bar .fb-dot{width:8px;height:8px;border-radius:50%;background:#7ee0a8;flex:none;animation:pulse 1.2s infinite}
+.focus-bar .fb-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.focus-bar .fb-btn{border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:99px;padding:4px 11px;font-size:12px;font-weight:600;min-height:30px}
+.focus-bar .fb-btn.stop{background:rgba(255,255,255,.12)}
+.focus-bar .fb-btn:active{transform:scale(.96)}
 /* ---------- tablet ---------- */
 @media(min-width:768px){
   .main{padding:20px 24px 40px}
@@ -393,6 +423,14 @@ textarea.inp{min-height:64px;resize:vertical;line-height:1.55}
           </div>
         </section>
 
+        <!-- ======================= 专注 ======================= -->
+        <section class="page" id="page-focus">
+          <div class="h-page">
+            <div><h1>专注</h1><div class="sub">选一个目标，坐着把事做了</div></div>
+          </div>
+          <div id="focusBody"></div>
+        </section>
+
         <!-- ======================= 看板 ======================= -->
         <section class="page" id="page-board">
           <div class="h-page">
@@ -425,6 +463,14 @@ textarea.inp{min-height:64px;resize:vertical;line-height:1.55}
 
   <!-- 移动端底部 4 Tab -->
   <nav class="tabbar" id="tabbar"></nav>
+
+  <!-- 专注进行中常驻指示条 -->
+  <div class="focus-bar hide" id="focusBar">
+    <span class="fb-dot"></span>
+    <span class="fb-txt" id="focusBarTxt">专注中…</span>
+    <button class="fb-btn" id="focusBarGo" type="button">查看</button>
+    <button class="fb-btn stop" id="focusBarStop" type="button" aria-label="停止专注">停止</button>
+  </div>
 </div>
 
 <div class="mask" id="mask"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
@@ -480,7 +526,13 @@ function icon(name, cls){
     bolt:'<path d="M13 3L5 14h6l-1 7 8-11h-6l1-7Z"/>',
     book:'<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z"/>',
     refresh:'<path d="M20 11.5a8 8 0 1 0-2.4 6"/><path d="M20 4.5v7h-7"/>',
-    spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/>'
+    spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/>',
+    target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+    timer:'<circle cx="12" cy="12" r="8.5"/><path d="M12 12V7.5"/><path d="M9.5 2.5h5"/>',
+    wave:'<path d="M3 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/>',
+    pause:'<rect x="7" y="5" width="3.5" height="14" rx="1.3"/><rect x="13.5" y="5" width="3.5" height="14" rx="1.3"/>',
+    play:'<path d="M7 5l12 7-12 7V5Z"/>',
+    stop:'<rect x="6" y="6" width="12" height="12" rx="2.5"/>'
   }[name] || '';
   return '<svg class="ic '+(cls||'')+'" viewBox="0 0 24 24" aria-hidden="true">'+p+'</svg>';
 }
@@ -830,6 +882,7 @@ function chartDays(n){
 function navItems(){
   return [
     { id:'today', label:'今日', icon:'sun' },
+    { id:'focus', label:'专注', icon:'target' },
     { id:'board', label:'看板', icon:'lay' },
     { id:'week',  label:'周报', icon:'doc' },
     { id:'mine',  label:'我的', icon:'user' }
@@ -980,6 +1033,9 @@ function renderTodayGoals(){
       var sa = statusOf(a, recsByDate(a.id), t), sb = statusOf(b, recsByDate(b.id), t);
       var ra = sa.overdue||sa.hasMissYesterday?0:1, rb = sb.overdue||sb.hasMissYesterday?0:1;
       if(ra!==rb) return ra-rb;
+      var pr = { high:0, mid:1, low:2, none:3 };
+      var pa = pr[a.priority||'none']!=null?pr[a.priority||'none']:3, pb = pr[b.priority||'none']!=null?pr[b.priority||'none']:3;
+      if(pa!==pb) return pa-pb;
       return (a.deadline||'') < (b.deadline||'') ? -1 : 1;
     });
   var doneList = store.goals.filter(isDone);
@@ -1015,7 +1071,15 @@ function goalCardHtml(g, t, finished){
   h += '<div class="gc-top"><span class="gc-dot"></span><div style="flex:1;min-width:0">';
   h += '<div class="gc-name">'+esc(g.name)+'</div>';
   var tags = '';
+  if(g.priority==='high') tags += '<span class="badge late">高优先</span>';
+  else if(g.priority==='mid') tags += '<span class="badge warn">中优先</span>';
+  else if(g.priority==='low') tags += '<span class="badge pri">低优先</span>';
   (g.tags||[]).forEach(function(x){ tags += '<span class="tag">'+esc(x)+'</span>'; });
+  var sts = g.subtasks||[];
+  if(sts.length){
+    var stDone = sts.filter(function(s){ return s.done; }).length;
+    tags += '<span class="tag">'+icon('check')+'子任务 '+stDone+'/'+sts.length+'</span>';
+  }
   if(todayQty>0) tags += '<span class="chip" style="color:var(--ok)">'+icon('check')+'今天已打卡 '+num(todayQty)+'</span>';
   if(st.overdue) tags += '<span class="badge late">逾期 '+st.overdueDays+' 天</span>';
   else if(daysLeft(g,t)<=3 && !finished) tags += '<span class="badge warn">剩 '+Math.max(1,daysLeft(g,t))+' 天</span>';
@@ -1158,11 +1222,18 @@ function renderBoard(){
       h += '<div class="small muted" style="padding:8px 2px">还没有记录。</div>';
     }else{
       shown.forEach(function(r){
-        h += '<div class="rec"><span class="rd">'+esc(fmtDateShort(r.date))+' 周'+WEEKDAYS[weekdayMon(parseYMD(r.date))]+'</span>'
-          + '<span class="ra">+'+num(r.amount)+' '+esc(g.unit)+'</span>'
-          + (r.minutes?('<span class="rm">'+num(r.minutes)+' 分钟</span>'):'')
-          + (r.bulk?'<span class="tag bu">补</span>':'')
-          + '<button class="del" data-act="delrec" data-id="'+r.id+'" aria-label="删除这条记录" title="删除这条记录">'+icon('trash')+'</button></div>';
+        if(r.focus){
+          h += '<div class="rec"><span class="rd">'+esc(fmtDateShort(r.date))+' 周'+WEEKDAYS[weekdayMon(parseYMD(r.date))]+'</span>'
+            + '<span class="ra">'+icon('timer')+'专注 '+num(r.minutes)+' 分钟</span>'
+            + '<span class="tag" style="background:var(--pri-soft);color:var(--pri)">专注</span>'
+            + '<button class="del" data-act="delrec" data-id="'+r.id+'" aria-label="删除这条记录" title="删除这条记录">'+icon('trash')+'</button></div>';
+        }else{
+          h += '<div class="rec"><span class="rd">'+esc(fmtDateShort(r.date))+' 周'+WEEKDAYS[weekdayMon(parseYMD(r.date))]+'</span>'
+            + '<span class="ra">+'+num(r.amount)+' '+esc(g.unit)+'</span>'
+            + (r.minutes?('<span class="rm">'+num(r.minutes)+' 分钟</span>'):'')
+            + (r.bulk?'<span class="tag bu">补</span>':'')
+            + '<button class="del" data-act="delrec" data-id="'+r.id+'" aria-label="删除这条记录" title="删除这条记录">'+icon('trash')+'</button></div>';
+        }
       });
     }
     var hidden = sess.length - shown.length;
@@ -1320,13 +1391,14 @@ function refreshAll(){
     renderSync();
     renderBanner();
     if(ui.tab==='today'){ renderTodayDate(); renderDue(); renderTodayGoals(); }
+    if(ui.tab==='focus'){ if(window.SGFocus) window.SGFocus.render(); }
     if(ui.tab==='board'){ renderChart(); renderBoard(); }
     if(ui.tab==='week'){ renderWeek(); }
     if(ui.tab==='mine'){ renderMine(); }
   }catch(e){ console.error('[render]', e); }
 }
 function setTab(id){
-  if(['today','board','week','mine'].indexOf(id)<0) return;
+  if(['today','focus','board','week','mine'].indexOf(id)<0) return;
   ui.tab = id;
   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('on'); });
   var el = document.getElementById('page-'+id);
@@ -1396,7 +1468,7 @@ function confirmModal(title, body, okText, danger){
 /* ---- 目标表单 ---- */
 function goalForm(g){
   var isNew = !g;
-  g = g || { name:'', unit:'个', total:'', deadline:ymd(addDays(today(),30)), color:COLORS[store.goals.length%COLORS.length], tags:[], obstacle:'', action:'', suggest:'ceil' };
+  g = g || { name:'', unit:'个', total:'', deadline:ymd(addDays(today(),30)), color:COLORS[store.goals.length%COLORS.length], tags:[], obstacle:'', action:'', suggest:'ceil', priority:'none', subtasks:[] };
   var sw = COLORS.map(function(c){ return '<button type="button" class="sw '+(c===g.color?'on':'')+'" data-color="'+c+'" style="background:'+c+'" aria-label="配色"></button>'; }).join('');
   openModal(
     '<div class="mh"><h3>'+(isNew?'新建学习目标':'编辑目标')+'</h3><button class="icon-btn" data-mclose aria-label="关闭">'+icon('x')+'</button></div>'
@@ -1409,6 +1481,11 @@ function goalForm(g){
     + '<div class="field"><label>配色</label><div class="swatches">'+sw+'</div></div>'
     + '<div class="field"><label>最容易拦住我的障碍 <em>选填</em></label><input class="inp" name="obstacle" maxlength="60" placeholder="比如：加班回家太累，只想刷手机" value="'+esc(g.obstacle||'')+'"></div>'
     + '<div class="field"><label>如果它出现，我就…… <em>选填</em></label><input class="inp" name="action" maxlength="60" placeholder="比如：只背 10 个也算，先打开 App" value="'+esc(g.action||'')+'"></div>'
+    + '<div class="field"><label>优先级 <em>选填，影响「今日」排序</em></label><div class="seg" id="segPri">'
+      + [['high','高'],['mid','中'],['low','低'],['none','无']].map(function(x){ return '<button type="button" data-pri="'+x[0]+'" class="'+((g.priority||'none')===x[0]?'on':'')+'">'+x[1]+'</button>'; }).join('')
+      + '</div></div>'
+    + '<div class="field"><label>拆解子任务 <em>选填，专注时可逐项打勾</em></label><div id="subtaskList" class="subtask-list"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px"><input class="inp" id="subtaskInput" placeholder="比如：先看第 3 章" maxlength="40"><button type="button" class="btn" id="subtaskAdd">添加</button></div></div>'
     + '<div class="field"><label>今日建议量取整方式</label><div class="seg" id="segSuggest">'
       + [['ceil','向上取整'],['round','四舍五入'],['floor','向下取整']].map(function(x){ return '<button type="button" data-sg="'+x[0]+'" class="'+(g.suggest===x[0]?'on':'')+'">'+x[1]+'</button>'; }).join('')
     + '</div><div class="hintline">'+icon('info')+'<span>剩余量 ÷ 剩余天数，每天自动重算；打卡时会预填这个数字，可以改。</span></div></div>'
@@ -1434,6 +1511,41 @@ function goalForm(g){
       b.classList.add('on'); updatePreview();
     });
   });
+  var pri = g.priority || 'none';
+  var subtasks = (g.subtasks||[]).map(function(s){ return { id: s.id||uid(), text: s.text||'', done: !!s.done }; });
+  function renderSubtasks(){
+    var box = document.getElementById('subtaskList');
+    if(!box) return;
+    if(!subtasks.length){ box.innerHTML = '<div class="empty">还没有子任务，添加后可以在专注时逐项打勾。</div>'; return; }
+    box.innerHTML = subtasks.map(function(s){
+      return '<div class="st '+(s.done?'done':'')+'" data-sid="'+s.id+'"><span class="st-tx">'+esc(s.text)+'</span>'
+        + '<button type="button" class="st-del" data-sdel="'+s.id+'" aria-label="删除子任务">'+icon('trash')+'</button></div>';
+    }).join('');
+  }
+  renderSubtasks();
+  var segPri = document.getElementById('segPri');
+  if(segPri) segPri.addEventListener('click', function(e){
+    var b = e.target.closest('[data-pri]'); if(!b) return;
+    pri = b.getAttribute('data-pri');
+    segPri.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on');
+  });
+  var addBtn = document.getElementById('subtaskAdd');
+  if(addBtn){
+    addBtn.addEventListener('click', function(){
+      var inp = document.getElementById('subtaskInput');
+      var t = inp.value.trim(); if(!t) return;
+      subtasks.push({ id: uid(), text:t, done:false });
+      inp.value=''; renderSubtasks();
+    });
+    document.getElementById('subtaskInput').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addBtn.click(); } });
+  }
+  var sl = document.getElementById('subtaskList');
+  if(sl) sl.addEventListener('click', function(e){
+    var del = e.target.closest('[data-sdel]'); if(!del) return;
+    subtasks = subtasks.filter(function(s){ return s.id!==del.getAttribute('data-sdel'); });
+    renderSubtasks();
+  });
   function read(){
     return {
       name: form.querySelector('[name=name]').value.trim(),
@@ -1442,7 +1554,9 @@ function goalForm(g){
       deadline: form.querySelector('[name=deadline]').value,
       tags: form.querySelector('[name=tags]').value.split(/[,，、\s]+/).map(function(s){return s.trim();}).filter(Boolean).slice(0,4),
       obstacle: form.querySelector('[name=obstacle]').value.trim(),
-      action: form.querySelector('[name=action]').value.trim()
+      action: form.querySelector('[name=action]').value.trim(),
+      priority: pri,
+      subtasks: subtasks.map(function(s){ return { id:s.id, text:s.text, done:s.done }; })
     };
   }
   function updatePreview(){
@@ -1467,10 +1581,12 @@ function goalForm(g){
     var obj = isNew ? {
       id: uid(), name:v.name, unit:v.unit, total:v.total, done:0, deadline:v.deadline,
       color: color, tags:v.tags, obstacle:v.obstacle, action:v.action, suggest:sg,
+      priority:v.priority, subtasks:v.subtasks,
       createdAt: Date.now(), demo:false
     } : {
       name:v.name, unit:v.unit, total:v.total, deadline:v.deadline, color:color,
-      tags:v.tags, obstacle:v.obstacle, action:v.action, suggest:sg
+      tags:v.tags, obstacle:v.obstacle, action:v.action, suggest:sg,
+      priority:v.priority, subtasks:v.subtasks
     };
     if(isNew){
       store.goals.push(obj);
@@ -1580,6 +1696,21 @@ function deleteRecord(id){
     recoverTotals(); saveNow(); refreshAll(); toast('记录已删除');
     logPush({op:'record', action:'del', at:Date.now(), id:id, goalId:r.goalId});
   }
+}
+
+/* ---- 专注：把一次专注折算为目标「投入分钟」 ---- */
+function addFocusMinutes(goalId, minutes){
+  var g = goalById(goalId);
+  if(!g) return false;
+  var m = Math.max(0, Math.round(minutes||0));
+  if(m<=0) return false;
+  var rec = { id:uid(), goalId:goalId, date:ymd(today()), amount:0, minutes:m, bulk:false, focus:true, createdAt:Date.now(), demo:false };
+  store.records.push(rec);
+  saveNow();
+  toast('专注 '+m+' 分钟已记入「'+g.name+'」', 'ok');
+  refreshAll();
+  logPush({op:'record', action:'add', at:Date.now(), rec:rec});
+  return true;
 }
 
 /* ---- 目标菜单 ---- */
@@ -1997,6 +2128,19 @@ function buildTime(off){
 }
 
 /* ============================================================
+   对外接口（供 focus.js 调用，避免拆分后访问不到内部状态）
+   ============================================================ */
+window.SG = {
+  store: store, goalById: goalById, icon: icon, toast: toast,
+  refreshAll: refreshAll, setTab: setTab, addFocusMinutes: addFocusMinutes,
+  saveNow: saveNow, saveLocal: saveLocal,
+  openModal: openModal, closeModal: closeModal, confirmModal: confirmModal,
+  uid: uid, ymd: ymd, today: today, num: num, esc: esc, clamp: clamp,
+  fmtMD: fmtMD, parseYMD: parseYMD, weekdayMon: weekdayMon, isDone: isDone,
+  COLORS: COLORS, WEEKDAYS: WEEKDAYS
+};
+
+/* ============================================================
    启动
    ============================================================ */
 function bindExtras(){
@@ -2035,6 +2179,7 @@ else boot();
 
 })();
 </script>
+<script src="focus.js"></script>
 <script src="native.js"></script>
 </body>
 </html>
